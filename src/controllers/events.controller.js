@@ -44,11 +44,16 @@ function volunteerIdentity(req) {
   return id ? `id:${String(id).trim().toLowerCase()}` : null;
 }
 
-function assertOrganizer(event, req) {
-  const email = requestEmail(req);
-  if (!email || String(event.organizerEmail ?? '').toLowerCase() !== email) {
-    throw apiError(403, 'Only the event organizer can perform this action.');
-  }
+function forbidIfNotOrganizer(event, req, res) {
+  const email = req.user?.email;
+  const isOwner =
+    typeof email === 'string' &&
+    email.trim().toLowerCase() === String(event.organizerEmail ?? '').trim().toLowerCase();
+
+  if (isOwner) return false;
+
+  res.status(403).json({ message: 'Forbidden: You can only modify your own events' });
+  return true;
 }
 
 export async function getUpcomingEvents(req, res, next) {
@@ -168,7 +173,7 @@ export async function updateEvent(req, res, next) {
     const event = await collection.findOne({ _id });
 
     if (!event) throw apiError(404, 'Event not found.');
-    assertOrganizer(event, req);
+    if (forbidIfNotOrganizer(event, req, res)) return;
 
     const body = req.body ?? {};
     const updates = {};
@@ -215,7 +220,7 @@ export async function deleteEvent(req, res, next) {
     const event = await collection.findOne({ _id });
 
     if (!event) throw apiError(404, 'Event not found.');
-    assertOrganizer(event, req);
+    if (forbidIfNotOrganizer(event, req, res)) return;
 
     await collection.deleteOne({ _id });
 
