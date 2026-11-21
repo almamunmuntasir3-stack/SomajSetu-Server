@@ -1,11 +1,12 @@
 import { connectDB } from '../config/db.js';
 import { apiError } from '../utils/apiError.js';
-import { escapeRegex, isEmail } from '../utils/validation.js';
+import { escapeRegex, isEmail, parseUserAvatar } from '../utils/validation.js';
 import { identityFromRequest } from '../utils/volunteerIdentity.js';
 
 const USERS = 'users';
 const EVENTS = 'events';
-const PROFILE_FIELDS = ['name', 'bio', 'phone', 'location', 'avatar'];
+const PROFILE_FIELDS = ['name', 'bio', 'phone', 'location'];
+const AVATAR_KEYS = ['avatar', 'image', 'imageUrl'];
 
 function canonicalEmail(req) {
   const email = req.params?.email;
@@ -42,7 +43,20 @@ async function volunteerStats(req, email) {
 async function profileResponse(req, user, email) {
   const stored = {};
   for (const field of PROFILE_FIELDS) stored[field] = user?.[field] ?? '';
-  return { ...stored, email, stats: await volunteerStats(req, email) };
+
+  // Promote a legacy image/imageUrl value, but prefer the canonical avatar.
+  const image = [user?.avatar, user?.image, user?.imageUrl].find(
+    (value) => typeof value === 'string' && value.trim(),
+  );
+  const avatar = image ? image.trim() : '';
+  return {
+    ...stored,
+    avatar,
+    image: avatar,
+    imageUrl: avatar,
+    email,
+    stats: await volunteerStats(req, email),
+  };
 }
 
 export async function getUserProfile(req, res, next) {
@@ -66,6 +80,14 @@ export async function updateUserProfile(req, res, next) {
         if (typeof body[field] !== 'string') throw apiError(400, `${field} must be a string.`);
         updates[field] = body[field].trim();
       }
+    }
+
+    // Validate image-like keys with the shared rules. An empty payload leaves
+    // the stored avatar alone instead of persisting '' or stripping a valid URL.
+    if (AVATAR_KEYS.some((key) => body[key] !== undefined)) {
+      const parsed = parseUserAvatar(body);
+      if (parsed.error) throw apiError(400, parsed.error);
+      if (parsed.value) updates.avatar = parsed.value;
     }
 
     const users = (await connectDB()).collection(USERS);

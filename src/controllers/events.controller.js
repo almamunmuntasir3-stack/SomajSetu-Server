@@ -1,10 +1,12 @@
 import { connectDB } from '../config/db.js';
 import { apiError } from '../utils/apiError.js';
 import {
+  defaultEventImage,
   escapeRegex,
   isEmail,
   isNonEmptyString,
   isValidObjectId,
+  parseEventImage,
   parseFutureDate,
   parsePositiveInt,
   toObjectId,
@@ -32,6 +34,18 @@ function forbidIfNotOrganizer(event, req, res) {
   return true;
 }
 
+// Every event response exposes both supported keys with the same per-event
+// value. Legacy docs with only imageUrl are promoted; empty values use the
+// configured default. Reads never mutate the stored document.
+function eventResponse(event) {
+  if (!event) return event;
+  const stored = [event.image, event.imageUrl].find(
+    (value) => typeof value === 'string' && value.trim(),
+  );
+  const image = stored ? stored.trim() : defaultEventImage();
+  return { ...event, image, imageUrl: image };
+}
+
 export async function getUpcomingEvents(req, res, next) {
   try {
     const filter = { eventDate: { $gt: new Date() } };
@@ -52,7 +66,7 @@ export async function getUpcomingEvents(req, res, next) {
       .sort({ eventDate: 1 })
       .toArray();
 
-    res.json(results);
+    res.json(results.map(eventResponse));
   } catch (error) {
     next(error);
   }
@@ -66,7 +80,7 @@ export async function getLatestEvents(req, res, next) {
       .limit(6)
       .toArray();
 
-    res.json(results);
+    res.json(results.map(eventResponse));
   } catch (error) {
     next(error);
   }
@@ -84,7 +98,7 @@ export async function getJoinedEvents(req, res, next) {
       .sort({ eventDate: 1 })
       .toArray();
 
-    res.json(results);
+    res.json(results.map(eventResponse));
   } catch (error) {
     next(error);
   }
@@ -97,7 +111,7 @@ export async function getEventById(req, res, next) {
 
     if (!event) throw apiError(404, 'Event not found.');
 
-    res.json(event);
+    res.json(eventResponse(event));
   } catch (error) {
     next(error);
   }
@@ -139,6 +153,9 @@ export async function createEvent(req, res, next) {
     const parsedCapacity = parsePositiveInt(body.maxVolunteers);
     if (parsedCapacity.error) throw apiError(400, parsedCapacity.error);
 
+    const parsedImage = parseEventImage(body);
+    if (parsedImage.error) throw apiError(400, parsedImage.error);
+
     const event = {
       title: body.title.trim(),
       category: body.category.trim(),
@@ -148,13 +165,14 @@ export async function createEvent(req, res, next) {
       maxVolunteers: parsedCapacity.value,
       organizerEmail: body.organizerEmail.trim().toLowerCase(),
       organizerName: body.organizerName.trim(),
+      image: parsedImage.value,
       joinedVolunteers: [],
       createdAt: new Date(),
     };
 
     const result = await (await eventsCollection()).insertOne(event);
 
-    res.status(201).json({ message: 'Event created.', event: { ...event, _id: result.insertedId } });
+    res.status(201).json({ message: 'Event created.', event: eventResponse({ ...event, _id: result.insertedId }) });
   } catch (error) {
     next(error);
   }
@@ -194,6 +212,15 @@ export async function updateEvent(req, res, next) {
       updates.maxVolunteers = parsed.value;
     }
 
+    // Only touch the stored image when the client actually sent one. An
+    // explicitly empty value resets to the default; omitting it preserves the
+    // event's own image.
+    if (body.image !== undefined || body.imageUrl !== undefined) {
+      const parsed = parseEventImage(body);
+      if (parsed.error) throw apiError(400, parsed.error);
+      updates.image = parsed.value;
+    }
+
     if (!Object.keys(updates).length) {
       throw apiError(400, 'No updatable fields were provided.');
     }
@@ -201,7 +228,7 @@ export async function updateEvent(req, res, next) {
     await collection.updateOne({ _id }, { $set: updates });
     const updated = await collection.findOne({ _id });
 
-    res.json({ message: 'Event updated.', event: updated });
+    res.json({ message: 'Event updated.', event: eventResponse(updated) });
   } catch (error) {
     next(error);
   }
@@ -261,7 +288,7 @@ export async function joinEvent(req, res, next) {
 
     if (!updated) throw apiError(409, 'This event is full or you have already joined it.');
 
-    res.json({ message: 'Joined event.', event: updated });
+    res.json({ message: 'Joined event.', event: eventResponse(updated) });
   } catch (error) {
     next(error);
   }
@@ -291,7 +318,7 @@ export async function leaveEvent(req, res, next) {
       throw apiError(409, 'You have not joined this event.');
     }
 
-    res.json({ message: 'Left event.', event: updated });
+    res.json({ message: 'Left event.', event: eventResponse(updated) });
   } catch (error) {
     next(error);
   }
