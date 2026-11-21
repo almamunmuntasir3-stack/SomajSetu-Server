@@ -8,10 +8,11 @@
 - CORS allows a single origin: `process.env.CLIENT_URL || "http://localhost:3000"` with credentials.
 
 ## Conventions that aren't obvious
-- `src/middleware/verifyJwt.js` verifies Bearer tokens with `jose`: first against the JWKS at `${AUTH_SERVER_URL || "http://localhost:3000"}/api/auth/jwks`, then falls back to HS256 with `JWT_SECRET`; it sets `req.user = { id, email, name, sub }`. All writes and both profile routes use it; the three `GET /api/events/...` routes are public.
+- `src/middleware/verifyJwt.js` verifies Bearer tokens with `jose`: first against the JWKS at `${AUTH_SERVER_URL || "http://localhost:3000"}/api/auth/jwks`, then falls back to HS256 with `JWT_SECRET`; it sets `req.user = { id, email, name, sub }`. All writes, both profile routes, and the joined-events reads use it; only `GET /api/events/upcoming|latest|:id` are public.
 - PATCH/DELETE ownership is checked against `req.user.email` only (case-insensitive), returning 403 `{ message: "Forbidden: You can only modify your own events" }`; body/header emails do not grant ownership.
-- Join/leave identity is stored in `events.joinedVolunteers` as `email:<lowercased>` or `id:<lowercased>`; user stats also count raw-email entries. Emails are normalized to lowercase on writes.
-- `dotenv/config` runs in both `src/server.js` and `src/config/db.js`. `.env` is gitignored; its `MONGODB_URI` currently uses a placeholder Atlas host (`cluster0.xxxxx.mongodb.net`), so startup fails with `ENOTFOUND` until a real URI is supplied.
+- `src/utils/volunteerIdentity.js` is the single source of truth for join identity: JWT claims win over body/header values, and joins store one `email:<lowercased>` or `id:<lowercased>` string in `events.joinedVolunteers`. Reads (`GET /api/events/joined-events`, alias `/joined`, and profile stats) match raw and prefixed email/id forms. Never reintroduce body-first identity lookup — that caused joins to be stored under a different key than the read query.
+- Static GET routes must stay above `router.get('/:id')` in `events.routes.js`, or they are parsed as ObjectIds.
+- `dotenv/config` runs in both `src/server.js` and `src/config/db.js`. `.env` is gitignored and now points at a working Atlas cluster.
 
 ## Commands & dependency state
 - `npm start` → `node src/server.js`; `npm run dev` → `nodemon src/server.js` (nodemon 3.1.14 is installed and in the lockfile).

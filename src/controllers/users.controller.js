@@ -1,6 +1,7 @@
 import { connectDB } from '../config/db.js';
 import { apiError } from '../utils/apiError.js';
 import { escapeRegex, isEmail } from '../utils/validation.js';
+import { identityFromRequest } from '../utils/volunteerIdentity.js';
 
 const USERS = 'users';
 const EVENTS = 'events';
@@ -16,10 +17,13 @@ function emailFilter(email) {
   return { email: new RegExp(`^${escapeRegex(email)}$`, 'i') };
 }
 
-async function volunteerStats(email) {
+async function volunteerStats(req, email) {
   const db = await connectDB();
   const events = db.collection(EVENTS);
-  const joined = { joinedVolunteers: { $in: [email, `email:${email}`] } };
+
+  const joinedValues = [email, `email:${email}`];
+  for (const id of identityFromRequest(req).ids) joinedValues.push(id, `id:${id}`);
+  const joined = { joinedVolunteers: { $in: joinedValues } };
 
   const [eventsHosted, eventsJoined, upcomingJoined] = await Promise.all([
     events.countDocuments({ organizerEmail: new RegExp(`^${escapeRegex(email)}$`, 'i') }),
@@ -30,17 +34,17 @@ async function volunteerStats(email) {
   return { eventsHosted, eventsJoined, upcomingJoined };
 }
 
-async function profileResponse(user, email) {
+async function profileResponse(req, user, email) {
   const stored = {};
   for (const field of PROFILE_FIELDS) stored[field] = user?.[field] ?? '';
-  return { ...stored, email, stats: await volunteerStats(email) };
+  return { ...stored, email, stats: await volunteerStats(req, email) };
 }
 
 export async function getUserProfile(req, res, next) {
   try {
     const email = canonicalEmail(req);
     const user = await (await connectDB()).collection(USERS).findOne(emailFilter(email));
-    res.json(await profileResponse(user, email));
+    res.json(await profileResponse(req, user, email));
   } catch (error) {
     next(error);
   }
@@ -73,7 +77,7 @@ export async function updateUserProfile(req, res, next) {
     }
 
     const user = await users.findOne(emailFilter(email));
-    res.json(await profileResponse(user, email));
+    res.json(await profileResponse(req, user, email));
   } catch (error) {
     next(error);
   }

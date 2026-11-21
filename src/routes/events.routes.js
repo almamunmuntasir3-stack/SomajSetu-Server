@@ -7,6 +7,11 @@ const router = Router();
 // Public reads. Static paths must be declared before /:id.
 router.get('/upcoming', controller.getUpcomingEvents);
 router.get('/latest', controller.getLatestEvents);
+
+// Authenticated reads: the current user's future joined events.
+router.get('/joined-events', verifyJwt, controller.getJoinedEvents);
+router.get('/joined', verifyJwt, controller.getJoinedEvents);
+
 router.get('/:id', controller.getEventById);
 
 router.post('/', verifyJwt, controller.createEvent);

@@ -9,6 +9,7 @@ import {
   parsePositiveInt,
   toObjectId,
 } from '../utils/validation.js';
+import { joinedVolunteersFilter, primaryIdentity } from '../utils/volunteerIdentity.js';
 
 const COLLECTION = 'events';
 
@@ -17,31 +18,6 @@ const eventsCollection = async () => (await connectDB()).collection(COLLECTION);
 function requireObjectId(id) {
   if (!isValidObjectId(id)) throw apiError(400, 'Invalid event id.');
   return toObjectId(id);
-}
-
-function requestEmail(req) {
-  const candidates = [
-    req.body?.userEmail,
-    req.body?.organizerEmail,
-    req.headers['x-user-email'],
-    req.user?.email,
-  ];
-  const match = candidates.find(isEmail);
-  return match ? match.trim().toLowerCase() : null;
-}
-
-function volunteerIdentity(req) {
-  const email = requestEmail(req);
-  if (email) return `email:${email}`;
-
-  const candidates = [
-    req.body?.userId,
-    req.headers['x-user-id'],
-    req.user?.id,
-    req.user?._id,
-  ];
-  const id = candidates.find((value) => value !== undefined && value !== null && String(value).trim() !== '');
-  return id ? `id:${String(id).trim().toLowerCase()}` : null;
 }
 
 function forbidIfNotOrganizer(event, req, res) {
@@ -88,6 +64,24 @@ export async function getLatestEvents(req, res, next) {
       .find({ eventDate: { $gt: new Date() } })
       .sort({ eventDate: 1 })
       .limit(6)
+      .toArray();
+
+    res.json(results);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getJoinedEvents(req, res, next) {
+  try {
+    const filter = {
+      ...joinedVolunteersFilter(req),
+      eventDate: { $gt: new Date() },
+    };
+
+    const results = await (await eventsCollection())
+      .find(filter)
+      .sort({ eventDate: 1 })
       .toArray();
 
     res.json(results);
@@ -233,7 +227,7 @@ export async function deleteEvent(req, res, next) {
 export async function joinEvent(req, res, next) {
   try {
     const _id = requireObjectId(req.params.id);
-    const identity = volunteerIdentity(req);
+    const identity = primaryIdentity(req);
 
     if (!identity) {
       throw apiError(400, 'A userEmail or userId is required to join an event.');
@@ -256,7 +250,7 @@ export async function joinEvent(req, res, next) {
         _id,
         eventDate: { $gt: new Date() },
         joinedVolunteers: { $ne: identity },
-        $expr: { $lt: [{ $size: '$joinedVolunteers' }, '$maxVolunteers'] },
+        $expr: { $lt: [{ $size: { $ifNull: ['$joinedVolunteers', []] } }, '$maxVolunteers'] },
       },
       { $addToSet: { joinedVolunteers: identity } },
       { returnDocument: 'after' },
@@ -273,7 +267,7 @@ export async function joinEvent(req, res, next) {
 export async function leaveEvent(req, res, next) {
   try {
     const _id = requireObjectId(req.params.id);
-    const identity = volunteerIdentity(req);
+    const identity = primaryIdentity(req);
 
     if (!identity) {
       throw apiError(400, 'A userEmail or userId is required to leave an event.');
