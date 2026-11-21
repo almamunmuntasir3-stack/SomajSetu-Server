@@ -42,14 +42,19 @@ export function primaryIdentity(req) {
   return null;
 }
 
-// Reads must recognize every form that could have been written for this user:
-// prefixed ids/emails and legacy raw email strings.
-export function joinedVolunteersFilter(req) {
+// Every form that could have been written for this user: prefixed ids/emails
+// and legacy raw email strings. Shared by reads, duplicate checks and leave.
+export function joinedVolunteerValues(req) {
   const { emails, ids } = identityFromRequest(req);
   const values = [];
 
   for (const email of emails) values.push(email, `email:${email}`);
   for (const id of ids) values.push(id, `id:${id}`);
 
-  return { joinedVolunteers: { $in: values } };
+  return [...new Set(values)];
+}
+
+// Reads must recognize every form that could have been written for this user.
+export function joinedVolunteersFilter(req) {
+  return { joinedVolunteers: { $in: joinedVolunteerValues(req) } };
 }

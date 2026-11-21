@@ -5,13 +5,13 @@
 - Entry: `src/server.js` (`main`, `npm start`). It awaits `connectDB()` before `app.listen()` and exits on connection failure; `src/config/db.js` exports `connectDB()` (cached MongoClient promise) and `closeDb()`.
 - Routes in `src/routes/`, handlers in `src/controllers/`, shared checks in `src/utils/`. Collection names are literally `events` and `users`.
 - No test, lint, typecheck, build, codegen, CI, or pre-commit config. Verify with `node --check <file>` plus HTTP smoke requests. `/health` pings MongoDB and returns `{ status: "ok", db: "connected", service: "shomajsetu-api" }`, or 503 when the ping fails.
-- CORS allows a single origin: `process.env.CLIENT_URL || "http://localhost:3000"` with credentials.
+- CORS allows both `process.env.CLIENT_URL` and `http://localhost:3000` (deduplicated, credentials enabled). Copy `.env.example` to `.env`; `MONGODB_URI` and `DB_NAME` are required, `JWT_SECRET`/`AUTH_SERVER_URL`/`CLIENT_URL`/`PORT` are documented there.
 
 ## Conventions that aren't obvious
-- `src/middleware/verifyJwt.js` verifies Bearer tokens with `jose`: first against the JWKS at `${AUTH_SERVER_URL || "http://localhost:3000"}/api/auth/jwks`, then falls back to HS256 with `JWT_SECRET`; it sets `req.user = { id, email, name, sub }`. All writes, both profile routes, and the joined-events reads use it; only `GET /api/events/upcoming|latest|:id` are public.
+- `src/middleware/verifyJwt.js` verifies Bearer tokens with `jose`: first against the JWKS at `${AUTH_SERVER_URL || "http://localhost:3000"}/api/auth/jwks`, then falls back to HS256 with `JWT_SECRET`; it sets `req.user = { id, _id, email, name, sub }`. All writes, both profile routes, and the joined-events reads use it; only `GET /api/events/upcoming|latest|:id` are public.
 - PATCH/DELETE ownership is checked against `req.user.email` only (case-insensitive), returning 403 `{ message: "Forbidden: You can only modify your own events" }`; body/header emails do not grant ownership.
-- `src/utils/volunteerIdentity.js` is the single source of truth for join identity: JWT claims win over body/header values, and joins store one `email:<lowercased>` or `id:<lowercased>` string in `events.joinedVolunteers`. Reads (`GET /api/events/joined-events`, alias `/joined`, and profile stats) match raw and prefixed email/id forms. Never reintroduce body-first identity lookup — that caused joins to be stored under a different key than the read query.
-- Static GET routes must stay above `router.get('/:id')` in `events.routes.js`, or they are parsed as ObjectIds.
+- `src/utils/volunteerIdentity.js` is the single source of truth for join identity: JWT claims win over body/header values, and joins store one `email:<lowercased>` or `id:<lowercased>` string in `events.joinedVolunteers`. `joinedVolunteerValues()` supplies every raw/prefixed form to reads, duplicate checks and leave, so legacy raw entries can't cause a double join or an un-removable join. Never reintroduce body-first identity lookup — that caused joins to be stored under a different key than the read query.
+- Profile stats are scoped to the requested email; token-derived ids are only counted when that email is the signed-in user's own (`req.user.email`). Static GET routes must stay above `router.get('/:id')` in `events.routes.js`, or they are parsed as ObjectIds.
 - `dotenv/config` runs in both `src/server.js` and `src/config/db.js`. `.env` is gitignored and now points at a working Atlas cluster.
 
 ## Commands & dependency state

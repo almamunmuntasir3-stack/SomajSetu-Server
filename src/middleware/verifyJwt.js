@@ -41,6 +41,7 @@ export async function verifyJwt(req, res, next) {
 
   req.user = {
     id: payload.id,
+    _id: payload._id,
     email: payload.email,
     name: payload.name,
     sub: payload.sub,

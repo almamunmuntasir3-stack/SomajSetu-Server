@@ -9,7 +9,7 @@ import {
   parsePositiveInt,
   toObjectId,
 } from '../utils/validation.js';
-import { joinedVolunteersFilter, primaryIdentity } from '../utils/volunteerIdentity.js';
+import { joinedVolunteersFilter, joinedVolunteerValues, primaryIdentity } from '../utils/volunteerIdentity.js';
 
 const COLLECTION = 'events';
 
@@ -240,8 +240,11 @@ export async function joinEvent(req, res, next) {
       throw apiError(400, 'Cannot join an event that has already started or ended.');
     }
 
+    const identityValues = joinedVolunteerValues(req);
     const joined = event.joinedVolunteers ?? [];
-    if (joined.includes(identity)) throw apiError(409, 'You have already joined this event.');
+    if (joined.some((value) => identityValues.includes(value))) {
+      throw apiError(409, 'You have already joined this event.');
+    }
     if (joined.length >= event.maxVolunteers) throw apiError(409, 'This event is full.');
 
     // The filter keeps the capacity/duplicate checks atomic under concurrent joins.
@@ -249,7 +252,7 @@ export async function joinEvent(req, res, next) {
       {
         _id,
         eventDate: { $gt: new Date() },
-        joinedVolunteers: { $ne: identity },
+        joinedVolunteers: { $nin: identityValues },
         $expr: { $lt: [{ $size: { $ifNull: ['$joinedVolunteers', []] } }, '$maxVolunteers'] },
       },
       { $addToSet: { joinedVolunteers: identity } },
@@ -273,10 +276,12 @@ export async function leaveEvent(req, res, next) {
       throw apiError(400, 'A userEmail or userId is required to leave an event.');
     }
 
+    const identityValues = joinedVolunteerValues(req);
     const collection = await eventsCollection();
+    // Remove every known form, including legacy raw email/id entries.
     const updated = await collection.findOneAndUpdate(
-      { _id, joinedVolunteers: identity },
-      { $pull: { joinedVolunteers: identity } },
+      { _id, joinedVolunteers: { $in: identityValues } },
+      { $pull: { joinedVolunteers: { $in: identityValues } } },
       { returnDocument: 'after' },
     );
 

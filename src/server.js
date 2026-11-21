@@ -7,7 +7,10 @@ import usersRoutes from './routes/users.routes.js';
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000', credentials: true }));
+// `cors` needs an explicit origin list when credentials are enabled. Keep the
+// local dev origin allowed even when a different CLIENT_URL is configured.
+const allowedOrigins = [...new Set([process.env.CLIENT_URL, 'http://localhost:3000'].filter(Boolean))];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 
 app.get('/health', async (req, res) => {

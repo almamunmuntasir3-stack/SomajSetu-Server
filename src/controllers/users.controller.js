@@ -22,7 +22,12 @@ async function volunteerStats(req, email) {
   const events = db.collection(EVENTS);
 
   const joinedValues = [email, `email:${email}`];
-  for (const id of identityFromRequest(req).ids) joinedValues.push(id, `id:${id}`);
+  // Token ids only describe the signed-in user; never count them toward a
+  // different profile's stats.
+  const requesterEmail = typeof req.user?.email === 'string' ? req.user.email.trim().toLowerCase() : '';
+  if (requesterEmail === email) {
+    for (const id of identityFromRequest(req).ids) joinedValues.push(id, `id:${id}`);
+  }
   const joined = { joinedVolunteers: { $in: joinedValues } };
 
   const [eventsHosted, eventsJoined, upcomingJoined] = await Promise.all([
