@@ -1,4 +1,4 @@
-import { getDb } from '../config/db.js';
+import { connectDB } from '../config/db.js';
 import { apiError } from '../utils/apiError.js';
 import {
   escapeRegex,
@@ -12,7 +12,7 @@ import {
 
 const COLLECTION = 'events';
 
-const eventsCollection = async () => (await getDb()).collection(COLLECTION);
+const eventsCollection = async () => (await connectDB()).collection(COLLECTION);
 
 function requireObjectId(id) {
   if (!isValidObjectId(id)) throw apiError(400, 'Invalid event id.');

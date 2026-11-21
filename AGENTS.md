@@ -2,9 +2,10 @@
 
 ## Layout & entrypoint
 - Single-package ESM Node/Express API (`"type": "module"`); no workspaces.
-- Entry: `src/server.js` (`main`, `npm start`). `src/config/db.js` exports `getDb()` (lazy, cached `MongoClient`) and `closeDb()`.
+- Entry: `src/server.js` (`main`, `npm start`). It awaits `connectDB()` before `app.listen()` and exits on connection failure; `src/config/db.js` exports `connectDB()` (cached MongoClient promise) and `closeDb()`.
 - Routes in `src/routes/`, handlers in `src/controllers/`, shared checks in `src/utils/`. Collection names are literally `events` and `users`.
-- No test, lint, typecheck, build, codegen, CI, or pre-commit config. Verify with `node --check <file>` plus HTTP smoke requests; `/health` returns `{ status: "ok", service: "shomajsetu-api" }`.
+- No test, lint, typecheck, build, codegen, CI, or pre-commit config. Verify with `node --check <file>` plus HTTP smoke requests. `/health` pings MongoDB and returns `{ status: "ok", db: "connected", service: "shomajsetu-api" }`, or 503 when the ping fails.
+- CORS allows a single origin: `process.env.CLIENT_URL || "http://localhost:3000"` with credentials.
 
 ## Conventions that aren't obvious
 - There is no auth middleware. Ownership for PATCH/DELETE is inferred from `body.userEmail`, `body.organizerEmail`, `x-user-email`, or `req.user.email`, compared to `event.organizerEmail`.

@@ -1,4 +1,4 @@
-import { getDb } from '../config/db.js';
+import { connectDB } from '../config/db.js';
 import { apiError } from '../utils/apiError.js';
 import { escapeRegex, isEmail } from '../utils/validation.js';
 
@@ -17,7 +17,7 @@ function emailFilter(email) {
 }
 
 async function volunteerStats(email) {
-  const db = await getDb();
+  const db = await connectDB();
   const events = db.collection(EVENTS);
   const joined = { joinedVolunteers: { $in: [email, `email:${email}`] } };
 
@@ -39,7 +39,7 @@ async function profileResponse(user, email) {
 export async function getUserProfile(req, res, next) {
   try {
     const email = canonicalEmail(req);
-    const user = await (await getDb()).collection(USERS).findOne(emailFilter(email));
+    const user = await (await connectDB()).collection(USERS).findOne(emailFilter(email));
     res.json(await profileResponse(user, email));
   } catch (error) {
     next(error);
@@ -59,7 +59,7 @@ export async function updateUserProfile(req, res, next) {
       }
     }
 
-    const users = (await getDb()).collection(USERS);
+    const users = (await connectDB()).collection(USERS);
 
     if (Object.keys(updates).length) {
       await users.updateOne(
